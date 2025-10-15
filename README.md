@@ -30,7 +30,7 @@ The application is designed with a clear separation of responsibilities, encapsu
 
 -   `TransactionProcessor`: If an event passes validation, this class takes over. It is responsible for constructing and (in this simulation) logging the details of the corresponding `mintTokens` transaction that would be sent to the destination chain's bridge contract.
 
--   `BridgeOrchestrator`: The central controller that ties all the other components together. It contains the main application loop, manages state (like the last block scanned and the set of processed nonces), and orchestrates the flow of data from scanning to validation to processing. It also includes top-level error handling and resilience logic.
+-   `BridgeOrchestrator`: The central controller that integrates all other components. It manages the main application loop, maintains state (like the last scanned block and the set of processed nonces), and orchestrates the flow: scanning -> validation -> processing. It also includes top-level error handling and resilience logic.
 
 ## How it Works
 
@@ -40,9 +40,9 @@ The operational flow of the script is as follows:
 
 2.  **Main Loop**: The orchestrator enters a continuous polling loop.
 
-3.  **Check for New Blocks**: It checks the latest block number on the source chain.
+3.  **Check for New Blocks**: It checks for new blocks on the source chain by comparing its last scanned block against the current chain height.
 
-4.  **Event Scanning**: If new blocks have been produced, the `EventScanner` is invoked to query for `DepositMade` events within the new block range. A 6-block confirmation delay is used to reduce the risk of processing events from chain reorganizations.
+4.  **Event Scanning**: If new blocks are present, the `EventScanner` is invoked to query for `DepositMade` events within the new block range. A 6-block confirmation delay is used to reduce the risk of processing events from chain reorganizations (reorgs).
 
 5.  **Validation**: Each detected event is passed to the `TransactionValidator`. If any validation check fails, the event is logged and discarded.
 
@@ -52,7 +52,7 @@ The operational flow of the script is as follows:
 
 8.  **Wait**: The loop then sleeps for a configured interval (`POLLING_INTERVAL_SECONDS`) before repeating the process.
 
-## Usage Example
+## Usage
 
 ### 1. Prerequisites
 - Python 3.8+
@@ -101,7 +101,40 @@ DESTINATION_CHAIN_RPC_URL='https://rpc.ankr.com/polygon_mumbai'
 
 Using your own private RPC URLs from a dedicated provider is highly recommended for stability and performance.
 
-### 4. Running the Script
+### 4. Code Usage Example
+
+The main entry point of the application instantiates and runs the `BridgeOrchestrator`. This demonstrates how the components are wired together.
+
+```python
+# (Simplified from script.py)
+import os
+from orchestrator import BridgeOrchestrator
+
+if __name__ == "__main__":
+    # Load configuration from environment variables
+    source_rpc_url = os.getenv("SOURCE_CHAIN_RPC_URL")
+    dest_rpc_url = os.getenv("DESTINATION_CHAIN_RPC_URL")
+
+    if not source_rpc_url or not dest_rpc_url:
+        raise ValueError("RPC URLs must be set in environment variables.")
+
+    print("Starting the Cross-Chain Bridge Event Listener Simulation.")
+    print("This script will poll for 'DepositMade' events on the source chain...")
+    print("Press Ctrl+C to stop.")
+
+    orchestrator = BridgeOrchestrator(
+        source_rpc_url=source_rpc_url,
+        dest_rpc_url=dest_rpc_url,
+        # ... other config parameters
+    )
+
+    try:
+        orchestrator.run()
+    except KeyboardInterrupt:
+        print("\nShutting down the listener.")
+```
+
+### 5. Running the Simulation
 
 Execute the main script:
 
