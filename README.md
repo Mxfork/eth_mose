@@ -1,128 +1,130 @@
-# {repo_name}
+# {repo_name}: Cross-Chain Bridge Event Listener Simulation
 
-A simulation of a robust event listener component for a cross-chain bridge. This system is designed to monitor a smart contract on a source blockchain for specific events (e.g., `TokensLocked`), parse them, and relay the data to a destination service, mimicking the core function of a bridge relayer node.
+This repository contains a Python-based simulation of a critical backend component for a cross-chain bridge. It acts as an event listener, or oracle, that monitors a bridge contract on a source blockchain (e.g., Ethereum Sepolia), validates deposit events, and simulates the process of initiating a corresponding token mint transaction on a destination blockchain (e.g., Polygon Mumbai).
+
+This script is designed as an architectural showcase, demonstrating a robust, multi-class structure, error handling, and separation of concerns suitable for a real-world decentralized application backend.
 
 ## Concept
 
-Cross-chain bridges allow users to transfer assets or data from one blockchain to another. A common mechanism involves locking assets in a smart contract on the source chain, which triggers the minting of equivalent wrapped assets on the destination chain.
+Cross-chain bridges allow users to transfer assets from one blockchain to another. A common mechanism is the "lock-and-mint" model:
+1.  A user **deposits** (locks) tokens into a bridge contract on the source chain.
+2.  The bridge contract emits an event (e.g., `DepositMade`) containing details of the deposit.
+3.  Off-chain services (listeners/oracles) detect this event.
+4.  After validating the event, these services trigger a transaction on the destination chain to **mint** an equivalent amount of a wrapped token and send it to the user's recipient address.
 
-This process requires a reliable off-chain component, often called a **relayer** or **oracle**, to watch for lock events on the source chain and securely submit a corresponding transaction on the destination chain. This project simulates the listening and relaying parts of that process.
-
-It connects to a source chain (e.g., Ethereum) via a WebSocket, listens for a specific `TokensLocked` event from a bridge contract, and upon receiving an event, it parses the data and POSTs it to a mock relayer API endpoint. For context, the event in the smart contract might look like this:
-
-```solidity
-// Example event in a Solidity smart contract
-event TokensLocked(
-    address indexed from,
-    address indexed to,
-    uint256 amount,
-    uint256 destinationChainId
-);
-```
+This script simulates the off-chain listener (steps 3 and 4), which is the backbone of the bridge's operation, ensuring that locked assets on one chain are correctly represented on the other.
 
 ## Code Architecture
 
-The project is designed with a modular, object-oriented architecture to separate concerns and enhance maintainability.
+The application is designed with a clear separation of responsibilities, encapsulated within distinct classes:
 
-- **`BlockchainConnector`**: This class is responsible for all direct interactions with the source blockchain. It manages the WebSocket connection using `web3.py`, handles connection establishment and health checks, and provides an interface to get contract instances.
+-   `BlockchainConnector`: Manages the connection to a blockchain via a Web3 RPC endpoint. It abstracts away the details of instantiating the `Web3` object and is used by other components to interact with both the source and destination chains.
 
-- **`EventParser`**: A utility class that takes raw event logs from the blockchain and decodes them into a structured, human-readable Python dictionary. It uses the contract's ABI to understand the event's data structure, ensuring correct interpretation of topics and data payloads.
+-   `EventScanner`: Its sole purpose is to scan the source chain's bridge contract for new `DepositMade` events. It operates in block ranges, manages a chunk-based scanning approach to avoid overwhelming RPC nodes, and formats raw event logs into a clean, usable dictionary.
 
-- **`RelayerService`**: This class simulates the action of relaying information to the destination chain. It takes the parsed event data and makes an HTTP POST request to a configured API endpoint. It includes robust error handling and a retry mechanism (using `requests` and `Retry`) to cope with transient network failures.
+-   `TransactionValidator`: This crucial security component validates each detected event. It performs a series of checks:
+    -   **Replay Protection**: Ensures a unique event nonce has not been processed before.
+    -   **Business Rules**: Checks if the deposit amount is within predefined limits.
+    -   **Data Integrity**: Verifies that addresses are in the correct format.
+    -   **External Checks**: Simulates an API call to a hypothetical external risk-assessment service (e.g., for checking against blacklisted addresses).
 
-- **`BridgeEventListener`**: The core orchestrator of the system. It initializes and coordinates the other components. Its main `start_listening` method contains the primary loop that:
-    1. Establishes the blockchain connection.
-    2. Creates a filter to watch for new `TokensLocked` events.
-    3. Polls for new events periodically.
-    4. Passes any new events to the `EventParser` and then to the `RelayerService`.
-    5. Handles connection drops and attempts to reconnect automatically.
+-   `TransactionProcessor`: If an event passes validation, this class takes over. It is responsible for constructing and (in this simulation) logging the details of the corresponding `mintTokens` transaction that would be sent to the destination chain's bridge contract.
 
-- **`main()` function**: The script's entry point. It loads configuration from environment variables, validates them, instantiates the `BridgeEventListener`, and starts the listening process. It also includes a graceful shutdown mechanism for `KeyboardInterrupt`.
-
-### Data Flow
-```
-+-----------------------+      +---------------------------+      +------------------+      +---------------------------+
-| Source Chain Node     | <--> |   BlockchainConnector     |      |   EventParser    |      |     RelayerService        |
-| (e.g., Infura WSS)    |      | (Connects & Gets Logs)    |----->| (Decodes Log)    |----->| (POSTs to Destination API)|
-+-----------------------+      +---------------------------+      +------------------+      +---------------------------+
-          ^                                        |
-          |                                        |
-          |           +----------------------------v-----------+
-          +-----------|         BridgeEventListener            |
-                      | (Orchestrates, Polls, Handles Errors)  |
-                      +----------------------------------------+
-```
+-   `BridgeOrchestrator`: The central controller that ties all the other components together. It contains the main application loop, manages state (like the last block scanned and the set of processed nonces), and orchestrates the flow of data from scanning to validation to processing. It also includes top-level error handling and resilience logic.
 
 ## How it Works
 
-1.  **Configuration**: The service starts by loading necessary configuration from a `.env` file. This includes the WebSocket URL for the source chain node, the address of the bridge smart contract, and the API endpoint for the destination relayer.
-2.  **Connection**: The `BlockchainConnector` establishes a persistent WebSocket connection to the source chain. This is more efficient for listening to real-time events than polling via HTTP.
-3.  **Filter Creation**: The `BridgeEventListener` uses the `web3.py` library to create an event filter on the bridge contract. This filter is specifically configured to watch for the `TokensLocked` event from the latest block onwards.
-4.  **Event Loop**: The script enters an infinite loop, periodically (e.g., every 5 seconds) querying the event filter for new entries using `filter.get_new_entries()`.
-5.  **Event Handling**: When a new event log is detected, it is passed to a handler function.
-6.  **Parsing**: The `EventParser` decodes the raw log data. The event's indexed `topics` and non-indexed `data` are converted into a clean dictionary containing details like the recipient's address, the amount transferred, and the destination chain ID.
-7.  **Relaying**: The `RelayerService` takes this parsed data and sends it as a JSON payload in an HTTP POST request to the destination API endpoint. This simulates the relayer informing the destination chain's logic about the lock event.
-8.  **Resilience**: The entire process is wrapped in error-handling blocks. If the WebSocket connection drops, the main loop catches the exception, waits for a specified interval, and attempts to reconnect, ensuring the listener is resilient to network disruptions.
+The operational flow of the script is as follows:
+
+1.  **Initialization**: The `BridgeOrchestrator` is instantiated. It initializes connectors for both chains, creates instances of the scanner, validator, and processor, and determines the starting block from which to scan.
+
+2.  **Main Loop**: The orchestrator enters a continuous polling loop.
+
+3.  **Check for New Blocks**: It checks the latest block number on the source chain.
+
+4.  **Event Scanning**: If new blocks have been produced, the `EventScanner` is invoked to query for `DepositMade` events within the new block range. A 6-block confirmation delay is used to reduce the risk of processing events from chain reorganizations.
+
+5.  **Validation**: Each detected event is passed to the `TransactionValidator`. If any validation check fails, the event is logged and discarded.
+
+6.  **Processing**: Valid events are handed off to the `TransactionProcessor`, which simulates the creation of the minting transaction on the destination chain.
+
+7.  **State Update**: If the transaction is successfully processed, the event's nonce is added to the `processed_nonces` set to prevent replay attacks, and the orchestrator updates the `last_scanned_block` number in its state.
+
+8.  **Wait**: The loop then sleeps for a configured interval (`POLLING_INTERVAL_SECONDS`) before repeating the process.
 
 ## Usage Example
 
 ### 1. Prerequisites
 - Python 3.8+
-- `pip` package installer
+- Access to RPC endpoints for an Ethereum testnet (e.g., Sepolia) and a Polygon testnet (e.g., Mumbai). You can get these from services like [Infura](https://infura.io), [Alchemy](https://www.alchemy.com), or [Ankr](https://www.ankr.com/rpc/).
 
-### 2. Installation
+### 2. Setup
 
-Clone the repository and install the required dependencies:
+First, clone the repository:
 ```bash
 git clone https://github.com/your-username/{repo_name}.git
 cd {repo_name}
+```
+
+Create and activate a Python virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
+```
+
+Install the required dependencies:
+```bash
 pip install -r requirements.txt
 ```
 
 ### 3. Configuration
 
-Create a file named `.env` in the root directory of the project and add the following configuration. You will need to provide your own values.
+The script requires RPC URLs for both the source and destination chains. You can provide them as environment variables.
 
-```ini
-# .env file
+#### Option 1: Export Environment Variables
 
-# WebSocket URL for the source chain node (e.g., from Infura, Alchemy).
-# Example for Ethereum Sepolia testnet:
-SOURCE_CHAIN_WSS_URL="wss://sepolia.infura.io/ws/v3/YOUR_INFURA_PROJECT_ID"
-
-# The address of the deployed bridge smart contract to monitor.
-BRIDGE_CONTRACT_ADDRESS="0x........................................"
-
-# The API endpoint of the destination chain's relayer service.
-# You can use a mock service like httpbin.org for testing.
-DESTINATION_RELAYER_API_URL="https://httpbin.org/post"
+Export the variables in your terminal session before running the script:
+```bash
+export SOURCE_CHAIN_RPC_URL='https://rpc.ankr.com/eth_sepolia'
+export DESTINATION_CHAIN_RPC_URL='https://rpc.ankr.com/polygon_mumbai'
 ```
 
-**Note**: Replace `YOUR_INFURA_PROJECT_ID` and the contract address with actual values.
+#### Option 2: Use a `.env` File (Recommended for local development)
+
+Alternatively, you can create a `.env` file in the project's root directory:
+```dotenv
+# .env
+SOURCE_CHAIN_RPC_URL='https://rpc.ankr.com/eth_sepolia'
+DESTINATION_CHAIN_RPC_URL='https://rpc.ankr.com/polygon_mumbai'
+```
+*Note: If you use this method, ensure your script is configured to load these variables (e.g., using the `python-dotenv` library) and add `.env` to your `.gitignore` file.*
+
+Using your own private RPC URLs from a dedicated provider is highly recommended for stability and performance.
 
 ### 4. Running the Script
 
-Execute the script from your terminal:
+Execute the main script:
 
 ```bash
 python script.py
 ```
 
-The script will start, connect to the blockchain, and begin listening for events.
-
-### Expected Output
-
-When the script is running, you will see logs like this:
-```
-2023-10-27 14:30:00 - INFO - main - Attempting to connect to blockchain node at wss://sepolia.infura.io/ws/v3/...
-2023-10-27 14:30:02 - INFO - main - Successfully connected to chain ID: 11155111
-2023-10-27 14:30:02 - INFO - main - Starting to listen for 'TokensLocked' events on contract 0x........................................
-```
-
-When a `TokensLocked` event is emitted by the target contract on the source chain, the listener will detect it and you will see:
+The application will start and begin polling for events. The output will look similar to this:
 
 ```
-2023-10-27 14:35:10 - INFO - main - Received new event log for transaction: 0x[...tx_hash...]
-2023-10-27 14:35:10 - INFO - main - Relaying event data to https://httpbin.org/post...
-2023-10-27 14:35:11 - INFO - main - Successfully relayed transaction 0x[...tx_hash...]. Response: { ...httpbin_response... }
+Starting the Cross-Chain Bridge Event Listener Simulation.
+This script will poll for 'DepositMade' events on the source chain...
+Press Ctrl+C to stop.
+2023-10-27 10:30:00,123 - BridgeOrchestrator - INFO - Bridge Orchestrator started. Initial scan block: 4750100
+2023-10-27 10:30:35,456 - EventScanner - INFO - Scanning for 'DepositMade' events from block 4750101 to 4750105.
+2023-10-27 10:30:37,789 - BridgeOrchestrator - INFO - Scan complete. Last scanned block is now 4750105
+... (if an event is found) ...
+2023-10-27 10:31:10,112 - EventScanner - INFO - Found 1 events in blocks 4750106-4750110.
+2023-10-27 10:31:10,115 - TransactionValidator - INFO - Successfully validated event from tx 0x... with nonce 12345.
+2023-10-27 10:31:10,118 - TransactionProcessor - INFO - Processing mint for recipient 0x... with amount 500000000000000000 (from source tx 0x...).
+2023-10-27 10:31:10,120 - TransactionProcessor - INFO - [SIMULATION] Would call 'mintTokens' on 0x5B6a9B55B6C8f7B2bEa7bF1f937B8b9933B02b54 for nonce 12345.
+2023-10-27 10:31:10,121 - TransactionProcessor - INFO - [SIMULATION] Transaction details: to=0x..., amount=500000000000000000
+2023-10-27 10:31:10,122 - BridgeOrchestrator - INFO - Successfully processed event with nonce 12345
 ```
+
+To stop the listener, press `Ctrl+C`.
