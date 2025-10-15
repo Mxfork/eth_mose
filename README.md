@@ -2,7 +2,7 @@
 
 This repository contains a Python-based simulation of a critical backend component for a cross-chain bridge. It acts as an event listener, or oracle, that monitors a bridge contract on a source blockchain (e.g., Ethereum Sepolia), validates deposit events, and simulates the process of initiating a corresponding token mint transaction on a destination blockchain (e.g., Polygon Mumbai).
 
-This script is designed as an architectural showcase, demonstrating a robust, multi-class structure, error handling, and separation of concerns suitable for a real-world decentralized application backend.
+This script is designed as an architectural showcase, demonstrating a robust, multi-class structure with clear separation of concerns and error handling, suitable for a real-world decentralized application backend.
 
 ## Concept
 
@@ -20,7 +20,7 @@ The application is designed with a clear separation of responsibilities, encapsu
 
 -   `BlockchainConnector`: Manages the connection to a blockchain via a Web3 RPC endpoint. It abstracts away the details of instantiating the `Web3` object and is used by other components to interact with both the source and destination chains.
 
--   `EventScanner`: Its sole purpose is to scan the source chain's bridge contract for new `DepositMade` events. It operates in block ranges, manages a chunk-based scanning approach to avoid overwhelming RPC nodes, and formats raw event logs into a clean, usable dictionary.
+-   `EventScanner`: Its sole responsibility is to scan the source chain's bridge contract for new `DepositMade` events. It operates in block ranges, manages a chunk-based scanning approach to avoid overwhelming RPC nodes, and formats raw event logs into a clean, usable dictionary.
 
 -   `TransactionValidator`: This crucial security component validates each detected event. It performs a series of checks:
     -   **Replay Protection**: Ensures a unique event nonce has not been processed before.
@@ -62,6 +62,7 @@ The operational flow of the script is as follows:
 
 First, clone the repository:
 ```bash
+# Replace with the actual repository URL
 git clone https://github.com/your-username/{repo_name}.git
 cd {repo_name}
 ```
@@ -89,15 +90,15 @@ export SOURCE_CHAIN_RPC_URL='https://rpc.ankr.com/eth_sepolia'
 export DESTINATION_CHAIN_RPC_URL='https://rpc.ankr.com/polygon_mumbai'
 ```
 
-#### Option 2: Use a `.env` File (Recommended for local development)
+#### Option 2: Use a `.env` File (Recommended)
 
-Alternatively, you can create a `.env` file in the project's root directory:
+Create a `.env` file in the project's root directory. The application will automatically load these variables if the `python-dotenv` package is installed.
+
 ```dotenv
-# .env
+# .env - Remember to add this file to your .gitignore
 SOURCE_CHAIN_RPC_URL='https://rpc.ankr.com/eth_sepolia'
 DESTINATION_CHAIN_RPC_URL='https://rpc.ankr.com/polygon_mumbai'
 ```
-*Note: If you use this method, ensure your script is configured to load these variables (e.g., using the `python-dotenv` library) and add `.env` to your `.gitignore` file.*
 
 Using your own private RPC URLs from a dedicated provider is highly recommended for stability and performance.
 
@@ -106,12 +107,12 @@ Using your own private RPC URLs from a dedicated provider is highly recommended 
 The main entry point of the application instantiates and runs the `BridgeOrchestrator`. This demonstrates how the components are wired together.
 
 ```python
-# (Simplified from script.py)
+# (Simplified from main script)
 import os
 from orchestrator import BridgeOrchestrator
 
 if __name__ == "__main__":
-    # Load configuration from environment variables
+    # Load configuration from environment variables (or a .env file)
     source_rpc_url = os.getenv("SOURCE_CHAIN_RPC_URL")
     dest_rpc_url = os.getenv("DESTINATION_CHAIN_RPC_URL")
 
