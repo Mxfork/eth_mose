@@ -6,13 +6,23 @@ A simulation of a robust event listener component for a cross-chain bridge. This
 
 Cross-chain bridges allow users to transfer assets or data from one blockchain to another. A common mechanism involves locking assets in a smart contract on the source chain, which triggers the minting of equivalent wrapped assets on the destination chain.
 
-This process requires a reliable off-chain component, often called a **relayer** or **oracle**, to watch for the lock events on the source chain and securely submit a corresponding transaction on the destination chain. This script simulates the 'listening' and 'relaying' part of that process.
+This process requires a reliable off-chain component, often called a **relayer** or **oracle**, to watch for lock events on the source chain and securely submit a corresponding transaction on the destination chain. This project simulates the listening and relaying parts of that process.
 
-It connects to a source chain (e.g., Ethereum) via a WebSocket, listens for a specific `TokensLocked` event from a bridge contract, and upon receiving an event, it parses the data and POSTs it to a mock relayer API endpoint for the destination chain.
+It connects to a source chain (e.g., Ethereum) via a WebSocket, listens for a specific `TokensLocked` event from a bridge contract, and upon receiving an event, it parses the data and POSTs it to a mock relayer API endpoint. For context, the event in the smart contract might look like this:
+
+```solidity
+// Example event in a Solidity smart contract
+event TokensLocked(
+    address indexed from,
+    address indexed to,
+    uint256 amount,
+    uint256 destinationChainId
+);
+```
 
 ## Code Architecture
 
-The script is designed with a modular, object-oriented architecture to separate concerns and enhance maintainability.
+The project is designed with a modular, object-oriented architecture to separate concerns and enhance maintainability.
 
 - **`BlockchainConnector`**: This class is responsible for all direct interactions with the source blockchain. It manages the WebSocket connection using `web3.py`, handles connection establishment and health checks, and provides an interface to get contract instances.
 
@@ -27,7 +37,7 @@ The script is designed with a modular, object-oriented architecture to separate 
     4. Passes any new events to the `EventParser` and then to the `RelayerService`.
     5. Handles connection drops and attempts to reconnect automatically.
 
-- **`main()` function**: The entry point of the script. It loads configuration from environment variables, validates them, instantiates the `BridgeEventListener`, and starts the listening process. It also includes a graceful shutdown mechanism for `KeyboardInterrupt`.
+- **`main()` function**: The script's entry point. It loads configuration from environment variables, validates them, instantiates the `BridgeEventListener`, and starts the listening process. It also includes a graceful shutdown mechanism for `KeyboardInterrupt`.
 
 ### Data Flow
 ```
@@ -45,14 +55,14 @@ The script is designed with a modular, object-oriented architecture to separate 
 
 ## How it Works
 
-1.  **Configuration**: The script starts by loading necessary configuration from a `.env` file. This includes the WebSocket URL for the source chain node, the address of the bridge smart contract, and the API endpoint for the destination relayer.
+1.  **Configuration**: The service starts by loading necessary configuration from a `.env` file. This includes the WebSocket URL for the source chain node, the address of the bridge smart contract, and the API endpoint for the destination relayer.
 2.  **Connection**: The `BlockchainConnector` establishes a persistent WebSocket connection to the source chain. This is more efficient for listening to real-time events than polling via HTTP.
 3.  **Filter Creation**: The `BridgeEventListener` uses the `web3.py` library to create an event filter on the bridge contract. This filter is specifically configured to watch for the `TokensLocked` event from the latest block onwards.
 4.  **Event Loop**: The script enters an infinite loop, periodically (e.g., every 5 seconds) querying the event filter for new entries using `filter.get_new_entries()`.
 5.  **Event Handling**: When a new event log is detected, it is passed to a handler function.
 6.  **Parsing**: The `EventParser` decodes the raw log data. The event's indexed `topics` and non-indexed `data` are converted into a clean dictionary containing details like the recipient's address, the amount transferred, and the destination chain ID.
 7.  **Relaying**: The `RelayerService` takes this parsed data and sends it as a JSON payload in an HTTP POST request to the destination API endpoint. This simulates the relayer informing the destination chain's logic about the lock event.
-8.  **Resilience**: The entire process is wrapped in error handling blocks. If the WebSocket connection drops, the main loop will catch the exception, wait for a specified interval, and attempt to reconnect, ensuring the listener is resilient to network disruptions.
+8.  **Resilience**: The entire process is wrapped in error-handling blocks. If the WebSocket connection drops, the main loop catches the exception, waits for a specified interval, and attempts to reconnect, ensuring the listener is resilient to network disruptions.
 
 ## Usage Example
 
@@ -98,7 +108,7 @@ Execute the script from your terminal:
 python script.py
 ```
 
-The script will start, connect to the blockchain, and begin listening for events. 
+The script will start, connect to the blockchain, and begin listening for events.
 
 ### Expected Output
 
