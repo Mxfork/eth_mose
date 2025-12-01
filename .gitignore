@@ -1,7 +1,11 @@
 ```gitignore
 venv/
 __pycache__/
+.pytest_cache/
 .vscode/
+
+# Environment variables
+.env
 
 # Build artifacts
 dist/
